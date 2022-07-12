@@ -53,7 +53,7 @@ static void handle_signal(int sig) noexcept{
     int err = 0;
     static int ctrlcCounter = 0;
     if (sig != SIGUSR1 && sig != SIGUSR2) {
-        info("Caught signal %d, exiting", sig);
+        debug("Caught signal %d, exiting", sig);
         if (ctrlcCounter++ == 5){
             fatal("forcefully terminating program!");
             exit(2);
@@ -62,18 +62,18 @@ static void handle_signal(int sig) noexcept{
     }else{
         if(gConfig->enableExit) {
             if (sig == SIGUSR1) {
-                info("Caught SIGUSR1, checking if we can terminate (no more devices attached)...");
+                debug("Caught SIGUSR1, checking if we can terminate (no more devices attached)...");
                 if (mux->devices_cnt() > 0) {
                     // we can't quit, there are still devices attached.
                     notice("Refusing to terminate, there are still devices attached. Kill me with signal 15 (TERM) to force quit.");
                 } else {
                     // it's safe to quit
-                    info("No more devices attached, exiting!");
+                    debug("No more devices attached, exiting!");
                     cassure(!pthread_mutex_unlock(&mlck));
                 }
             }
         } else {
-            info("Caught SIGUSR1/2 but this instance was not started with \"--enable-exit\", ignoring.");
+            debug("Caught SIGUSR1/2 but this instance was not started with \"--enable-exit\", ignoring.");
         }
     }
     return;
@@ -132,7 +132,7 @@ static int daemonize(void) noexcept{
 
     // Create a new SID for the child process
     cretassure((sid = setsid()) >=0, "setsid() failed");
-    
+
     cretassure((pid = fork()) >=0, "fork() failed (second)");
 
     if (pid > 0) {
@@ -210,7 +210,7 @@ static void parse_opts(int argc, const char **argv){
 #else
     const char* opts_spec = "hvVdzxXl:U:";
 #endif
-    
+
     while (1) {
         c = getopt_long(argc, (char*const*)argv, opts_spec, longopts, (int *) 0);
         if (c == -1) {
@@ -288,8 +288,8 @@ int main(int argc, const char * argv[]) {
     int lfd = -1;
     struct flock lock = {};
 
-    
-    info("starting %s", VERSION_STRING);
+
+    debug("starting %s", VERSION_STRING);
     cassure(!pthread_mutex_init(&mlck, NULL));
     cassure(!pthread_mutex_lock(&mlck));
     debug("mlck inited");
@@ -310,7 +310,7 @@ int main(int argc, const char * argv[]) {
         idevice_set_debug_level(gConfig->debugLevel);
 #endif
     }
-    
+
     if (gConfig->daemonize && !gConfig->useLogfile) {
         verbose += LL_INFO;
         debug("enabling syslog");
@@ -321,7 +321,6 @@ int main(int argc, const char * argv[]) {
 
     // set log level to specified verbosity
     log_level = verbose;
-    info("starting %s", VERSION_STRING);
 
 
     {
@@ -329,7 +328,7 @@ int main(int argc, const char * argv[]) {
         struct rlimit rlim;
         getrlimit(RLIMIT_NOFILE, &rlim);
         rlim.rlim_max = 65536;
-        setrlimit(RLIMIT_NOFILE, (const struct rlimit*)&rlim);   
+        setrlimit(RLIMIT_NOFILE, (const struct rlimit*)&rlim);
     }
     set_signal_handlers();
 
@@ -347,7 +346,7 @@ int main(int argc, const char * argv[]) {
 
         cretassure(lock.l_pid,"Could not determine pid of the other running instance!");
 
-        notice("Sending signal %d to instance with pid %d", exit_signal, lock.l_pid);
+        debug("Sending signal %d to instance with pid %d", exit_signal, lock.l_pid);
         cretassure(!kill(lock.l_pid, exit_signal),"Could not deliver signal %d to pid %d", exit_signal, lock.l_pid);
         goto error;
     }
@@ -369,14 +368,14 @@ int main(int argc, const char * argv[]) {
     lock.l_start = 0;
     lock.l_len = 0;
     cretassure(fcntl(lfd, F_SETLK, &lock) >=0, "Lockfile locking failed!");
-    
+
     {
         char pids[10];
         cassure(snprintf(pids, sizeof(pids), "%d", getpid()) < sizeof(pids));
         cretassure(write(lfd, pids, strlen(pids)) == strlen(pids), "Could not write pidfile!");
     }
 
-    //starting    
+    //starting
     mux = new Muxer();
 
     if (!(mux->_doPreflight = gConfig->doPreflight)){
@@ -386,18 +385,18 @@ int main(int argc, const char * argv[]) {
 
     try{
         mux->spawnClientManager();
-        info("Inited ClientManager");
+        debug("Inited ClientManager");
     }catch (tihmstar::exception &e){
         fatal("failed to spawnClientManager with error=%d (%s)",e.code(),e.what());
         fatal("Terminating since a ClientManager is require to operate");
         cassure(0);
     }
-    
+
 
     // drop elevated privileges
     if (gConfig->dropUser.size() && (getuid() == 0 || geteuid() == 0)) {
         struct passwd *pw = NULL; // don't free this
-        
+
         cretassure(pw = getpwnam(gConfig->dropUser.c_str()), "Dropping privileges failed, check if user '%s' exists!", gConfig->dropUser.c_str());
 
         if (pw->pw_uid == 0) {
@@ -410,9 +409,9 @@ int main(int argc, const char * argv[]) {
             }
 
             cretassure(initgroups(gConfig->dropUser.c_str(), pw->pw_gid) >=0, "Failed to drop privileges (cannot set supplementary groups)");
-            
+
             cretassure(setgid(pw->pw_gid) >=0, "Failed to drop privileges (cannot set group ID to %d)", pw->pw_gid);
-            
+
             cretassure(setuid(pw->pw_uid) >=0, "Failed to drop privileges (cannot set user ID to %d)", pw->pw_uid);
 
             cretassure(setuid(0) == -1, "Failed to drop privileges properly!");
@@ -425,7 +424,7 @@ int main(int argc, const char * argv[]) {
     if (gConfig->enableUSBDeviceManager){
         try{
             mux->spawnUSBDeviceManager();
-            info("Inited USBDeviceManager");
+            debug("Inited USBDeviceManager");
         }catch (tihmstar::exception &e){
             fatal("failed to spawnUSBDeviceManager with error=%d (%s)",e.code(),e.what());
         }
@@ -434,20 +433,20 @@ int main(int argc, const char * argv[]) {
     if (gConfig->enableWifiDeviceManager){
         try{
             mux->spawnWIFIDeviceManager();
-            info("Inited WIFIDeviceManager");
+            debug("Inited WIFIDeviceManager");
         }catch (tihmstar::exception &e){
             fatal("failed to spawnWIFIDeviceManager with error=%d (%s)",e.code(),e.what());
         }
     }
-    
+
     if (!mux->hasDeviceManager()){
         fatal("failed to spawn any DeviceManager");
         fatal("Terminating since at least one DeviceManager is require to operate");
         cassure(0);
     }
-    
 
-    notice("Initialization complete");
+
+    debug("Initialization complete");
     if (report_to_parent){
         try{
             notify_parent(0);
@@ -457,7 +456,7 @@ int main(int argc, const char * argv[]) {
     }
 
     if (gConfig->enableExit) {
-        notice("Enabled exit on SIGUSR1 if no devices are attached. Start a new instance with \"--exit\" to trigger.");
+        debug("Enabled exit on SIGUSR1 if no devices are attached. Start a new instance with \"--exit\" to trigger.");
     }
 
 
@@ -474,7 +473,7 @@ error:
             }
         }
     }
-    notice("main reached cleanup");
+    debug("main reached cleanup");
     if (mux){
         delete mux;
     }
@@ -485,6 +484,6 @@ error:
     if (lfd > 0){
         close(lfd);
     }
-    notice("done!");
+    debug("done!");
     return err;
 }

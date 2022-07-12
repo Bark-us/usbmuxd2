@@ -65,15 +65,15 @@ diriter std::filesystem::directory_iterator(std::string dirpath){
     DIR *dir = NULL;
     struct dirent *ent = NULL;
     diriter ret;
-    
+
     assure(dir = opendir(dirpath.c_str()));
-    
+
     while ((ent = readdir (dir)) != NULL) {
         if (ent->d_type != DT_REG)
             continue;
         ret._file.push_back({dirpath + "/" + ent->d_name});
     }
-    
+
     if (dir) closedir(dir);
     return ret;
 }
@@ -95,7 +95,7 @@ static char *sysconf_generate_system_buid(){
     const char *chars = "ABCDEF0123456789";
     srand((unsigned)time(NULL));
     int i = 0;
-    
+
     for (i = 0; i < 36; i++) {
         if (i == 8 || i == 13 || i == 18 || i == 23) {
             uuid[i] = '-';
@@ -104,7 +104,7 @@ static char *sysconf_generate_system_buid(){
             uuid[i] = chars[random() % 16];
         }
     }
-    
+
     uuid[36] = '\0';
     return uuid;
 }
@@ -119,7 +119,7 @@ static void mkdir_with_parents(const char *dir, int mode){
     if (mkdir(dir, mode) == 0 || errno == EEXIST) {
         return;
     }
-    
+
     parent = strdup(dir);
     assure(parentdir = dirname(parent));
     mkdir_with_parents(parentdir, mode);
@@ -138,20 +138,20 @@ plist_t readPlist(const char *filePath){
         }
         safeFree(fbuf);
     });
-    
+
     retassure((fd = open(filePath, O_RDONLY))>0, "Failed to read plist at path '%s'",filePath);
     assure(!fstat(fd, &finfo));
-    
+
     assure(fbuf = (char*)malloc(finfo.st_size));
-    
+
     assure(read(fd, fbuf, finfo.st_size) == finfo.st_size);
-    
+
     if (memcmp(fbuf, "bplist00", 8) == 0) {
         plist_from_bin(fbuf, (uint32_t)finfo.st_size, &pl);
     } else {
         plist_from_xml(fbuf, (uint32_t)finfo.st_size, &pl);
     }
-    
+
     return pl;
 }
 
@@ -164,7 +164,7 @@ void writePlistToFile(plist_t plist, const char *dst){
     });
     uint32_t bufLen = 0;
     plist_to_xml(plist, &buf, &bufLen);
-    
+
     retassure(saveFile = fopen(dst, "w"), "Failed to write plist file to=%s",dst);
     assure(fwrite(buf, 1, bufLen, saveFile) == bufLen);
 }
@@ -172,7 +172,7 @@ void writePlistToFile(plist_t plist, const char *dst){
 static void sysconf_create_config_dir(void){
     struct stat st{};
     constexpr const char *config_path = sysconf_get_config_dir();
-    
+
     if (stat(config_path, &st) != 0) {
         mkdir_with_parents(config_path, 0755);
     }
@@ -182,14 +182,14 @@ char *get_device_record_path(const char *udid){
     constexpr const char *config_path = sysconf_get_config_dir();
     size_t filepathSize = 0;
     char *filepath = NULL;
-    
+
     assure(udid);
-    
+
     sysconf_create_config_dir();
-    
+
     filepathSize = strlen(config_path) + strlen(udid) + sizeof("/.plist");
     assure(filepath = (char*)malloc(filepathSize));
-    
+
     snprintf(filepath, filepathSize, "%s/%s.plist", config_path,udid);
     return filepath;
 }
@@ -200,7 +200,7 @@ plist_t sysconf_get_device_record(const char *udid){
         safeFree(filepath);
     });
     filepath = get_device_record_path(udid);
-    
+
     return readPlist(filepath);
 }
 
@@ -214,7 +214,7 @@ void sysconf_set_device_record(const char *udid, const plist_t record){
     assure(udid);
     assure(record);
     filepath = get_device_record_path(udid);
-    
+
     writePlistToFile(record, filepath);
     sysconf_load_known_macaddrs();
 }
@@ -225,7 +225,7 @@ void sysconf_remove_device_record(const char *udid){
         safeFree(filepath);
     });
     filepath = get_device_record_path(udid);
-    
+
     retassure(!remove(filepath), "could not remove %s: %s", filepath, strerror(errno));
     sysconf_load_known_macaddrs();
 }
@@ -241,9 +241,9 @@ plist_t sysconf_get_value(const std::string &key){
     });
     plist_t p_val = NULL;
     filepath = get_device_record_path(CONFIG_FILE);
-    
+
     p_devrecord = readPlist(filepath);
-    
+
     retassure(p_val = plist_dict_get_item(p_devrecord, key.c_str()), "Failed to get value for key '%s'",key.c_str());
 
     return plist_copy(p_val);
@@ -257,14 +257,14 @@ void sysconf_set_value(const std::string &key, plist_t val){
         safeFreeCustom(p_sysconf, plist_free);
     });
     filepath = get_device_record_path(CONFIG_FILE);
-    
+
     try {
         p_sysconf = readPlist(filepath);
     } catch (tihmstar::exception &e) {
         warning("%s: Reading %s failed! Regenerating!",__func__,CONFIG_FILE);
         p_sysconf = plist_new_dict();
     }
-    
+
     plist_dict_set_item(p_sysconf, key.c_str(), val);
     writePlistToFile(p_sysconf, filepath);
 }
@@ -276,7 +276,7 @@ std::string sysconf_get_system_buid(){
     });
     const char *buid_str = NULL;
     uint64_t buid_str_len = 0;
-    
+
     try {
         p_buid = sysconf_get_value(CONFIG_SYSTEM_BUID_KEY);
     } catch (tihmstar::exception &e) {
@@ -285,9 +285,9 @@ std::string sysconf_get_system_buid(){
         p_buid = plist_new_string(buid.c_str());
         sysconf_set_value(CONFIG_SYSTEM_BUID_KEY, p_buid);
     }
-    
+
     retassure(buid_str = plist_get_string_ptr(p_buid, &buid_str_len), "Failed to get str ptr from build");
-    
+
     return std::string(buid_str,buid_str_len);
 }
 
@@ -317,16 +317,16 @@ static void sysconf_load_known_macaddrs(){
             std::string macaddr;
 
             p_devrecord = readPlist(p.path().c_str());
-            
+
             retassure(p_macaddr = plist_dict_get_item(p_devrecord, "WiFiMACAddress"), "Failed to read macaddr from pairing record");
-            
+
             {
                 const char *str = NULL;
                 uint64_t str_len = 0;
                 retassure(str = plist_get_string_ptr(p_macaddr, &str_len), "Faile to get str ptr from MacAddress");
                 macaddr = std::string(str,str_len);
             }
-            
+
             std::string path = p.path();
 
             size_t lastSlashPos = path.find_last_of("/")+1;
@@ -334,9 +334,9 @@ static void sysconf_load_known_macaddrs(){
 
             std::string uuid = path.substr(lastSlashPos,dotPos-lastSlashPos);
             debug("adding macaddr=%s for uuid=%s",macaddr.c_str(),uuid.c_str());
-            
+
             gKnownMacAddrs[macaddr] = uuid;
-            
+
         } catch (tihmstar::exception &e){
             debug("failed to read record with error=%d (%s)",e.code(),e.what());
         }
@@ -348,7 +348,7 @@ std::string sysconf_udid_for_macaddr(std::string macaddr){
         sysconf_load_known_macaddrs();
     }
     try{
-        return gKnownMacAddrs.at(macaddr);        
+        return gKnownMacAddrs.at(macaddr);
     }catch (...){
         reterror("macaddr=%s is not paired",macaddr.c_str());
     }
@@ -388,7 +388,7 @@ bool sysconf_try_getconfig_bool(std::string key, bool defaultValue){
 }
 
 
-Config::Config() : 
+Config::Config() :
 //commandline
 enableExit(false),
 daemonize(false),
@@ -403,5 +403,5 @@ void Config::load(){
     doPreflight = sysconf_try_getconfig_bool("doPreflight",true);
     enableWifiDeviceManager = sysconf_try_getconfig_bool("enableWifiDeviceManager",true);
     enableUSBDeviceManager = sysconf_try_getconfig_bool("enableUSBDeviceManager",true);
-    info("Loaded config");    
+    debug("Loaded config");
 }

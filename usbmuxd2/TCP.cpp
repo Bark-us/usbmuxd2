@@ -227,7 +227,7 @@ void TCP::connect() {
     cleanup([&]{
         _didConnect = true; // make sure destructor knows this function was called and returned
     });
-    info("Starting TCP connection");
+    debug("Starting TCP connection");
 
     send_tcp(TH_SYN);
 
@@ -235,7 +235,7 @@ void TCP::connect() {
         sched_yield();
 
     assure(_connState == CONN_CONNECTED);
-    info("TCP Connected to device");
+    debug("TCP Connected to device");
     try {
         _cli->send_result(_cli->hdr->tag, RESULT_OK);
     } catch (...) {
@@ -333,7 +333,7 @@ void TCP::handle_input(tcphdr* tcp_header, uint8_t* payload, uint32_t payload_le
                 _device->send_packet(USBDevice::MUX_PROTO_TCP, bufstart, _stx.seqAcked-rAck, &tcp_header);
             }
         } else if (tcp_header->th_flags == TH_RST){
-            info("Connection reset by device, flags: %u sport=%u dport=%u", tcp_header->th_flags,_sPort,_dPort);
+            debug("Connection reset by device, flags: %u sport=%u dport=%u", tcp_header->th_flags,_sPort,_dPort);
             kill();
         }else{
             warning("unexpected flags=0x%02x",tcp_header->th_flags);
@@ -346,17 +346,17 @@ void TCP::handle_input(tcphdr* tcp_header, uint8_t* payload, uint32_t payload_le
 void TCP::kill() noexcept{
     //sets _killInProcess to true and executes if statement if it was false before
     if (!_killInProcess.exchange(true)) {
-        
+
         std::thread delthread([this](){
 #ifdef DEBUG
             debug("killing TCP (%p) %d",this,_pfds[0].fd);
 #else
-            info("killing TCP %d",_pfds[0].fd);
+            debug("killing TCP %d",_pfds[0].fd);
 #endif
             delete this;
         });
         delthread.detach();
-        
+
 
     }
 }

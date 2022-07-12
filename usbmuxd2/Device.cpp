@@ -31,16 +31,16 @@ Device::~Device(){
 void Device::kill() noexcept{
     //sets _killInProcess to true and executes if statement if it was false before
     if (!_killInProcess.exchange(true)){
-    
+
         std::thread delthread([this](){
 #ifdef DEBUG
             debug("killing device (%p) %s",this,_serial);
 #else
-            info("killing device %s",_serial);
+            debug("killing device %s",_serial);
 #endif
             delete this;
         });
         delthread.detach();
-        
+
     }
 }
