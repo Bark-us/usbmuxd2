@@ -11,6 +11,8 @@
 
 #include <Device.hpp>
 #include <string>
+#include <mutex>
+#include <condition_variable>
 #include <Manager/Manager.hpp>
 #include <libimobiledevice/libimobiledevice.h>
 #include <libimobiledevice/heartbeat.h>
@@ -23,11 +25,16 @@ class WIFIDevice : public Device, Manager {
     heartbeat_client_t _hbclient;
 	plist_t _hbrsp;
 	idevice_t _idev;
+    std::mutex _ld_mutex;
+    std::condition_variable _ld_cv;
 
     virtual ~WIFIDevice() override;
     virtual void loopEvent() override;
     virtual void beforeLoop() override;
     virtual void afterLoop() noexcept override;
+
+    bool checkLockdownRunning();
+    void waitForTimeout(long timeout);
 
 public:
     WIFIDevice(std::string uuid, std::string ipaddr, std::string serviceName, Muxer *mux);
