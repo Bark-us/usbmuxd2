@@ -13,6 +13,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <Client.hpp>
+#include <string.h>
 
 #ifdef SOCKET_PATH
 static const char *socket_path = SOCKET_PATH;
