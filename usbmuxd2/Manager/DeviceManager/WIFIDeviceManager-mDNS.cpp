@@ -122,7 +122,7 @@ error:
 
 WIFIDeviceManager::WIFIDeviceManager(Muxer *mux): DeviceManager(mux), _client(NULL), _dns_sd_fd(-1), _readfds{}, _nfds(0), _tv{}{
     int err = 0;
-    debug("WIFIDeviceManager mDNS-client");
+    printf("WIFIDeviceManager mDNS-client\n");
     assure(!(err = DNSServiceBrowse(&_client, 0, kDNSServiceInterfaceIndexAny, "_apple-mobdev2._tcp", "", browse_reply, this)));
 
     assure((_dns_sd_fd = DNSServiceRefSockFD(_client))>0);

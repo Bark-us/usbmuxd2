@@ -74,6 +74,8 @@ void SockConn::connect(){
     }
 	devaddr.sin_port = htons(_dPort);
 
+    printf("USBMUXD: connect %s:%d\n", _ipaddr, _dPort);
+
 	retassure(!(err = ::connect(_dfd, (sockaddr*)&devaddr, sizeof(devaddr))), "failed to connect to device on port=%d with err=%d errno=%d(%s)",_dPort,err,errno,strerror(errno));
 	
     _cli->send_result(_cli->hdr->tag, RESULT_OK);

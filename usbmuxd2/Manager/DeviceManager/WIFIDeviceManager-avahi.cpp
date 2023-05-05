@@ -28,10 +28,11 @@ void avahi_resolve_callback(AvahiServiceResolver *r, AvahiIfIndex interface, Ava
 
 #pragma mark WIFIDeviceManager
 
-WIFIDeviceManager::WIFIDeviceManager(Muxer *mux): DeviceManager(mux){
+WIFIDeviceManager::WIFIDeviceManager(Muxer *mux): DeviceManager(mux), _simple_poll(NULL) {
     int err = 0;
-    debug("WIFIDeviceManager avahi-client");
+    printf("WIFIDeviceManager avahi-client\n");
 
+#if 0
     assure(_simple_poll = avahi_simple_poll_new());
 
     retassure(_avahi_client = avahi_client_new(avahi_simple_poll_get(_simple_poll), (AvahiClientFlags)0, avahi_client_callback, this, &err),
@@ -40,6 +41,22 @@ WIFIDeviceManager::WIFIDeviceManager(Muxer *mux): DeviceManager(mux){
 
 	assure(_avahi_sb = avahi_service_browser_new(_avahi_client, AVAHI_IF_UNSPEC, AVAHI_PROTO_UNSPEC, "_apple-mobdev2._tcp", NULL, (AvahiLookupFlags)0, avahi_browse_callback, this));
     debug("WIFIDeviceManager created avahi service_browser");
+#endif
+
+    std::string macAddr = "28:ec:95:96:33:1c";
+    if (!_mux->have_wifi_device(macAddr)) {
+        std::string uuid = "a2003810397b7d23de4a367f8a01f0f031557fdf";
+        std::string serviceName = "manual-test";
+        //std::string addr = "192.168.149.147";
+        std::string addr = "127.0.0.2";
+        try{
+            WIFIDevice* dev = new WIFIDevice(uuid, addr, serviceName, _mux);
+            _mux->add_device(dev);
+            printf("USBMUXD: Added manual test device, %s\n", addr.c_str());
+        } catch (tihmstar::exception &e){
+            printf("USBMUXD: Failed to add manual test device\n");
+        }
+    }
 }
 
 WIFIDeviceManager::~WIFIDeviceManager(){
@@ -65,8 +82,10 @@ stopLoop();
 }
 
 void WIFIDeviceManager::loopEvent(){
-  assure(!avahi_simple_poll_loop(_simple_poll)); //it's fine if this is blocking
-  debug("WIFIDeviceManager avahi main loop finished");
+  if (_simple_poll) {
+    assure(!avahi_simple_poll_loop(_simple_poll)); //it's fine if this is blocking
+    debug("WIFIDeviceManager avahi main loop finished");
+  }
 }
 
 #pragma mark avahi_callback implementations
@@ -134,8 +153,10 @@ void avahi_resolve_callback(AvahiServiceResolver *r, AvahiIfIndex interface, Ava
             std::string macAddr{serviceName.substr(0,serviceName.find("@"))};
             std::string uuid;
 
+            printf("USBMUXD: device discovery: %s\n", macAddr.c_str());
             try{
                 uuid = sysconf_udid_for_macaddr(macAddr);
+                //uuid = "hidden";
             }catch (tihmstar::exception &e){
                 debug("failed to find uuid for mac=%s with error=%d (%s)",macAddr.c_str(),e.code(),e.what());
                 break;

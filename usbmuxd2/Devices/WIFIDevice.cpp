@@ -23,10 +23,12 @@ WIFIDevice::WIFIDevice(std::string uuid, std::string ipaddr, std::string service
 : Device(mux,Device::MUXCONN_WIFI), _ipaddr(ipaddr), _serviceName(serviceName), _hbclient(NULL), _hbrsp(NULL),
 	_idev(NULL)
 {
+    printf("USBMUXD: new device, uuid=%s, ipaddr=%s, serviceName=%s\n", uuid.c_str(), ipaddr.c_str(), serviceName.c_str());
 	strncpy(_serial, uuid.c_str(), sizeof(_serial));
 }
 
 WIFIDevice::~WIFIDevice() {
+    printf("USBMUXD: destroy wifi device\n");
     stopLoop();
     _muxer->delete_device(this);
     safeFreeCustom(_hbclient, heartbeat_client_free);
@@ -83,6 +85,8 @@ void WIFIDevice::start_connect(uint16_t dport, Client *cli){
 			conn->kill();
 		}
 	});
+
+    printf("USBMUXD: start connect, serial=%s, ipaddr=%s, dport=%d\n", _serial, _ipaddr.c_str(), dport);
 
 	conn = new SockConn(_ipaddr,dport,cli);
 	conn->connect();

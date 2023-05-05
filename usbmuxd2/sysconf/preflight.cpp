@@ -82,6 +82,25 @@ error:
     }
 }
 
+static std::string GetDeviceInfoString(lockdownd_client_t lockdown, const char* key, const char* domain) {
+    std::string retval;
+    plist_t node = NULL;
+    if (lockdownd_get_value(lockdown, domain, key, &node) == LOCKDOWN_E_SUCCESS) {
+        if (node) {
+            if (plist_get_node_type(node) == PLIST_STRING) {
+                uint64_t value_len = 0;
+                const char* value = plist_get_string_ptr(node, &value_len);
+                if (value) {
+                    retval = std::string(value, value_len);
+                }
+            }
+            plist_free(node);
+            node = NULL;
+        }
+    }
+    return retval;
+}
+
 void preflight_device(const char *serial, int id){
     std::string host_id;
     int version_major = 0;
@@ -180,6 +199,10 @@ pairing_required:
     version_major = (int)strtol(version_str, NULL, 10);
 
     debug("%s: Found ProductVersion %s device %s", __func__, version_str, serial);
+
+    printf("USBMUXD: pairing, ProductVersion: %s\n", GetDeviceInfoString(lockdown, "ProductVersion", NULL).c_str());
+    printf("USBMUXD: pairing, ProductName: %s\n", GetDeviceInfoString(lockdown, "ProductName", NULL).c_str());
+    printf("USBMUXD: pairing, DeviceName: %s\n", GetDeviceInfoString(lockdown, "DeviceName", NULL).c_str());
 
     lockdownd_set_untrusted_host_buid(lockdown);
     if ((lret = lockdownd_pair(lockdown, NULL)) == LOCKDOWN_E_SUCCESS) {

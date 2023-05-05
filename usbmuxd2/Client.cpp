@@ -185,8 +185,17 @@ void Client::processData(usbmuxd_header *hdr){
                 message = std::string(str,str_len);
             }
 
+            printf("USBMUXD: command=%s\n", message.c_str());
+
             update_client_info(p_recieved);
 
+            if (_info.progName) {
+                printf("USBMUXD: client name=%s\n", _info.progName);
+            }
+            if (_info.clientVersionString) {
+                printf("USBMUXD: client version=%s\n", _info.clientVersionString);
+            }
+            
             if (message == "Listen") {
                 goto PLIST_CLIENT_LISTEN_LOC;
             } else if (message == "Connect") {
@@ -373,7 +382,7 @@ void Client::processData(usbmuxd_header *hdr){
     reterror("we should not get here :o");
 
 PLIST_CLIENT_CONNECTION_LOC:
-    debug("Client %d connection request to device %d port %d", _fd, device_id, portnum);
+    printf("Client %d connection request to device %d port %d\n", _fd, device_id, portnum);
     try {
         //transfer socket ownership to device!
         _muxer->start_connect(device_id, portnum, this);
@@ -385,7 +394,7 @@ PLIST_CLIENT_CONNECTION_LOC:
 
 PLIST_CLIENT_LISTEN_LOC:
     send_result(hdr->tag, RESULT_OK);
-    debug("Client %d now LISTENING", _fd);
+    printf("Client %d now LISTENING\n", _fd);
     _isListening = true;
     _muxer->notify_alldevices(this); //inform client about all connected devices
     return;
