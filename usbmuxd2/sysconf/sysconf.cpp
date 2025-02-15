@@ -18,6 +18,7 @@
 #include <map>
 #include <plist/plist.h>
 #include <vector>
+#include <ctime>
 
 #ifdef HAVE_FILESYSTEM
 #include <filesystem>
