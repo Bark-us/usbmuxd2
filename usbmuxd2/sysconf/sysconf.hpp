@@ -10,6 +10,7 @@
 #define sysconf_hpp
 
 #include <string>
+#include <vector>
 #include <plist/plist.h>
 
 constexpr const char *sysconf_get_config_dir();
@@ -22,6 +23,10 @@ void sysconf_remove_device_record(const char *udid);
 std::string sysconf_get_system_buid();
 
 std::string sysconf_udid_for_macaddr(std::string macaddr);
+void sysconf_add_macaddr_mapping(std::string macaddr, std::string udid);
+std::vector<std::string> sysconf_get_known_udids();
+
+std::string sysconf_probe_lockdownd_udid(const char *ipaddr, uint32_t ifindex);
 
 void sysconf_fix_permissions(int uid, int gid);
 

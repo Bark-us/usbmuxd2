@@ -538,27 +538,26 @@ plist_t Muxer::getDevicePlist(Device *dev) noexcept{
 
         if (wifidev->_ipaddr.find(":") == std::string::npos){
             //this is an IPv4 addr
-            struct sockaddr_in sin4 = {};
-#ifdef __APPLE__
-            sin4.sin_len = sizeof(struct sockaddr_in);
-#endif
-            sin4.sin_family = AF_INET;
-            sin4.sin_addr.s_addr = inet_addr(wifidev->_ipaddr.c_str());
-            // Pad to 0x80 bytes to match expected format
+            // NetworkAddress must use BSD sockaddr format (with sin_len)
+            // because libimobiledevice parses byte[1] as address family
             char buf[0x80] = {};
-            memcpy(buf, &sin4, sizeof(sin4));
+            buf[0] = 0x10; // sin_len = sizeof(struct sockaddr_in) = 16
+            buf[1] = 0x02; // sin_family = AF_INET
+            // buf[2..3] = sin_port = 0
+            uint32_t addr = inet_addr(wifidev->_ipaddr.c_str());
+            memcpy(buf + 4, &addr, sizeof(addr));
             plist_dict_set_item(p_props, "NetworkAddress", plist_new_data(buf, sizeof(buf)));
         }else{
             //this is an IPv6 addr
-            struct sockaddr_in6 sin6 = {};
-#ifdef __APPLE__
-            sin6.sin6_len = sizeof(struct sockaddr_in6);
-#endif
-            sin6.sin6_family = AF_INET6;
-            inet_pton(AF_INET6, wifidev->_ipaddr.c_str(), &sin6.sin6_addr);
-            sin6.sin6_scope_id = wifidev->_ifIndex;
+            // BSD sockaddr_in6: sin6_len(1) sin6_family(1) sin6_port(2) sin6_flowinfo(4) sin6_addr(16) sin6_scope_id(4) = 28 bytes
             char buf[0x80] = {};
-            memcpy(buf, &sin6, sizeof(sin6));
+            buf[0] = 0x1C; // sin6_len = sizeof(struct sockaddr_in6) = 28
+            buf[1] = 0x1E; // sin6_family = AF_INET6 (30)
+            // buf[2..3] = sin6_port = 0
+            // buf[4..7] = sin6_flowinfo = 0
+            inet_pton(AF_INET6, wifidev->_ipaddr.c_str(), buf + 8); // sin6_addr at offset 8
+            uint32_t scope_id = wifidev->_ifIndex;
+            memcpy(buf + 24, &scope_id, sizeof(scope_id)); // sin6_scope_id at offset 24
             plist_dict_set_item(p_props, "NetworkAddress", plist_new_data(buf, sizeof(buf)));
         }
         plist_dict_set_item(p_props, "InterfaceIndex", plist_new_uint(wifidev->_ifIndex));

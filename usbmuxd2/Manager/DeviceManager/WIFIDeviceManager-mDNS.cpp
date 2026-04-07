@@ -55,7 +55,22 @@ void resolve_reply(DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t interfac
     try{
         uuid = sysconf_udid_for_macaddr(macAddr);
     }catch (tihmstar::exception &e){
-        creterror("failed to find uuid for mac=%s with error=%d (%s)",macAddr.c_str(),e.code(),e.what());
+        // Private WiFi Address: probe lockdownd directly for the UDID
+        info("MAC %s not in pairing records, probing %s for UDID (private WiFi address?)", macAddr.c_str(), hosttarget);
+        uuid = sysconf_probe_lockdownd_udid(hosttarget, interfaceIndex);
+        if (uuid.empty()) {
+            creterror("Could not identify device with MAC %s at %s", macAddr.c_str(), hosttarget);
+        }
+        std::vector<std::string> known = sysconf_get_known_udids();
+        bool known_device = false;
+        for (const auto &k : known) {
+            if (k == uuid) { known_device = true; break; }
+        }
+        if (!known_device) {
+            creterror("Device %s (MAC %s) is not paired", uuid.c_str(), macAddr.c_str());
+        }
+        info("Identified private MAC %s as paired device %s", macAddr.c_str(), uuid.c_str());
+        sysconf_add_macaddr_mapping(macAddr, uuid);
     }
 
     if (!wifimgr->_mux->have_wifi_device(macAddr)) {
