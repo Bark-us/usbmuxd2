@@ -21,6 +21,7 @@
 #include <sysconf/sysconf.hpp>
 #include <string.h>
 #include <arpa/inet.h>
+#include <netinet/in.h>
 #include <unistd.h>
 #include <system_error>
 
@@ -537,19 +538,29 @@ plist_t Muxer::getDevicePlist(Device *dev) noexcept{
 
         if (wifidev->_ipaddr.find(":") == std::string::npos){
             //this is an IPv4 addr
-            #warning TODO this is ugly! :(
+            // NetworkAddress must use BSD sockaddr format (with sin_len)
+            // because libimobiledevice parses byte[1] as address family
             char buf[0x80] = {};
-            if (IS_BIGENDIAN()) {
-                ((uint32_t*)buf)[0] = 0x10020000;
-            } else {
-                ((uint32_t*)buf)[0] = 0x00000210;
-            }
-            ((uint32_t*)buf)[1] = inet_addr(wifidev->_ipaddr.c_str());
+            buf[0] = 0x10; // sin_len = sizeof(struct sockaddr_in) = 16
+            buf[1] = 0x02; // sin_family = AF_INET
+            // buf[2..3] = sin_port = 0
+            uint32_t addr = inet_addr(wifidev->_ipaddr.c_str());
+            memcpy(buf + 4, &addr, sizeof(addr));
             plist_dict_set_item(p_props, "NetworkAddress", plist_new_data(buf, sizeof(buf)));
         }else{
-#warning TODO add support for ipv6 NetworkAddress (data)
+            //this is an IPv6 addr
+            // BSD sockaddr_in6: sin6_len(1) sin6_family(1) sin6_port(2) sin6_flowinfo(4) sin6_addr(16) sin6_scope_id(4) = 28 bytes
+            char buf[0x80] = {};
+            buf[0] = 0x1C; // sin6_len = sizeof(struct sockaddr_in6) = 28
+            buf[1] = 0x1E; // sin6_family = AF_INET6 (30)
+            // buf[2..3] = sin6_port = 0
+            // buf[4..7] = sin6_flowinfo = 0
+            inet_pton(AF_INET6, wifidev->_ipaddr.c_str(), buf + 8); // sin6_addr at offset 8
+            uint32_t scope_id = wifidev->_ifIndex;
+            memcpy(buf + 24, &scope_id, sizeof(scope_id)); // sin6_scope_id at offset 24
+            plist_dict_set_item(p_props, "NetworkAddress", plist_new_data(buf, sizeof(buf)));
         }
-#warning TODO missing fields: InterfaceIndex (integer)
+        plist_dict_set_item(p_props, "InterfaceIndex", plist_new_uint(wifidev->_ifIndex));
 
     }
     plist_dict_set_item(p_props, "SerialNumber", plist_new_string(dev->getSerial()));

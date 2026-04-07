@@ -22,6 +22,7 @@
 class WIFIDevice : public Device, Manager {
     std::string _ipaddr;
     std::string _serviceName;
+    uint32_t _ifIndex;
     heartbeat_client_t _hbclient;
 	plist_t _hbrsp;
 	idevice_t _idev;
@@ -37,7 +38,7 @@ class WIFIDevice : public Device, Manager {
     void waitForTimeout(long timeout);
 
 public:
-    WIFIDevice(std::string uuid, std::string ipaddr, std::string serviceName, Muxer *mux);
+    WIFIDevice(std::string uuid, std::string ipaddr, std::string serviceName, Muxer *mux, uint32_t ifIndex = 0);
     WIFIDevice(const WIFIDevice &) =delete; //delete copy constructor
     WIFIDevice(WIFIDevice &&o) = delete; //move constructor
 

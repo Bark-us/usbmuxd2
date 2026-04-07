@@ -19,8 +19,8 @@
 
 const long LOCKDOWND_TIMEOUT = 30;
 
-WIFIDevice::WIFIDevice(std::string uuid, std::string ipaddr, std::string serviceName, Muxer *mux)
-: Device(mux,Device::MUXCONN_WIFI), _ipaddr(ipaddr), _serviceName(serviceName), _hbclient(NULL), _hbrsp(NULL),
+WIFIDevice::WIFIDevice(std::string uuid, std::string ipaddr, std::string serviceName, Muxer *mux, uint32_t ifIndex)
+: Device(mux,Device::MUXCONN_WIFI), _ipaddr(ipaddr), _serviceName(serviceName), _ifIndex(ifIndex), _hbclient(NULL), _hbrsp(NULL),
 	_idev(NULL)
 {
 	strncpy(_serial, uuid.c_str(), sizeof(_serial));
@@ -84,7 +84,7 @@ void WIFIDevice::start_connect(uint16_t dport, Client *cli){
 		}
 	});
 
-	conn = new SockConn(_ipaddr,dport,cli);
+	conn = new SockConn(_ipaddr,dport,cli,_ifIndex);
 	conn->connect();
 	conn = nullptr; //let SockConn float and manage itself
 }

@@ -17,7 +17,6 @@
 #include <avahi-common/error.h>
 #include <avahi-common/malloc.h>
 
-
 #pragma mark avahi_callback definitions
 void avahi_client_callback(AvahiClient *c, AvahiClientState state, void* userdata) noexcept;
 void avahi_browse_callback(AvahiServiceBrowser *b, AvahiIfIndex interface, AvahiProtocol protocol, AvahiBrowserEvent event,
@@ -137,8 +136,26 @@ void avahi_resolve_callback(AvahiServiceResolver *r, AvahiIfIndex interface, Ava
             try{
                 uuid = sysconf_udid_for_macaddr(macAddr);
             }catch (tihmstar::exception &e){
-                debug("failed to find uuid for mac=%s with error=%d (%s)",macAddr.c_str(),e.code(),e.what());
-                break;
+                // Private WiFi Address: advertised MAC doesn't match any pairing record.
+                // Probe lockdownd directly to get the device's UDID.
+                info("MAC %s not in pairing records, probing %s for UDID (private WiFi address?)", macAddr.c_str(), addr);
+                uuid = sysconf_probe_lockdownd_udid(addr, (uint32_t)interface);
+                if (uuid.empty()) {
+                    debug("Could not identify device with MAC %s at %s", macAddr.c_str(), addr);
+                    break;
+                }
+                // Verify this UDID has a pairing record
+                std::vector<std::string> known = sysconf_get_known_udids();
+                bool known_device = false;
+                for (const auto &k : known) {
+                    if (k == uuid) { known_device = true; break; }
+                }
+                if (!known_device) {
+                    info("Device %s (MAC %s) is not paired", uuid.c_str(), macAddr.c_str());
+                    break;
+                }
+                info("Identified private MAC %s as paired device %s", macAddr.c_str(), uuid.c_str());
+                sysconf_add_macaddr_mapping(macAddr, uuid);
             }
 
             if (!wifimgr->_mux->have_wifi_device(macAddr)) {
@@ -146,7 +163,7 @@ void avahi_resolve_callback(AvahiServiceResolver *r, AvahiIfIndex interface, Ava
                 serviceName += ".";
                 serviceName += type;
                 try{
-                	dev = new WIFIDevice(uuid, addr, serviceName, wifimgr->_mux);
+                	dev = new WIFIDevice(uuid, addr, serviceName, wifimgr->_mux, (uint32_t)interface);
                 } catch (tihmstar::exception &e){
                 	creterror("failed to construct device with error=%d (%s)",e.code(),e.what());
                 }

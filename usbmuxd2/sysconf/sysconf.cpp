@@ -7,6 +7,7 @@
 //
 
 #include "sysconf.hpp"
+#include <log.h>
 #include <libgeneral/macros.h>
 #include <libgeneral/exception.hpp>
 #include <sys/stat.h>
@@ -19,6 +20,10 @@
 #include <plist/plist.h>
 #include <vector>
 #include <ctime>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netdb.h>
 
 #ifdef HAVE_FILESYSTEM
 #include <filesystem>
@@ -353,6 +358,146 @@ std::string sysconf_udid_for_macaddr(std::string macaddr){
     }catch (...){
         reterror("macaddr=%s is not paired",macaddr.c_str());
     }
+}
+
+void sysconf_add_macaddr_mapping(std::string macaddr, std::string udid){
+    if (!gKnownMacAddrs.size()){
+        sysconf_load_known_macaddrs();
+    }
+    gKnownMacAddrs[macaddr] = udid;
+    debug("cached private macaddr=%s for uuid=%s",macaddr.c_str(),udid.c_str());
+}
+
+std::vector<std::string> sysconf_get_known_udids(){
+    if (!gKnownMacAddrs.size()){
+        sysconf_load_known_macaddrs();
+    }
+    std::vector<std::string> udids;
+    for (const auto &pair : gKnownMacAddrs){
+        udids.push_back(pair.second);
+    }
+    return udids;
+}
+
+// Helper: send a lockdownd plist request and receive the response
+static plist_t lockdownd_send_recv(int sfd, plist_t req){
+    char *xml = NULL;
+    uint32_t xml_len = 0;
+    plist_to_xml(req, &xml, &xml_len);
+    if (!xml) return NULL;
+
+    uint32_t net_len = htonl(xml_len);
+    bool ok = (send(sfd, &net_len, 4, 0) == 4 && send(sfd, xml, xml_len, 0) == (ssize_t)xml_len);
+    free(xml);
+    if (!ok) return NULL;
+
+    uint32_t resp_len = 0;
+    if (recv(sfd, &resp_len, 4, MSG_WAITALL) != 4) return NULL;
+    resp_len = ntohl(resp_len);
+    if (resp_len == 0 || resp_len > 65536) return NULL;
+
+    std::vector<char> buf(resp_len);
+    ssize_t total = 0;
+    while (total < (ssize_t)resp_len) {
+        ssize_t n = recv(sfd, buf.data() + total, resp_len - total, 0);
+        if (n <= 0) break;
+        total += n;
+    }
+    if (total != (ssize_t)resp_len) return NULL;
+
+    plist_t resp = NULL;
+    plist_from_xml(buf.data(), resp_len, &resp);
+    return resp;
+}
+
+// Connect to a device's lockdownd and try StartSession with each known pairing
+// record to identify which device this is. Returns the matching UDID or empty string.
+std::string sysconf_probe_lockdownd_udid(const char *ipaddr, uint32_t ifindex){
+    std::string udid;
+    std::vector<std::string> udids = sysconf_get_known_udids();
+    std::string buid = sysconf_get_system_buid();
+
+    for (const auto &candidate : udids) {
+        int sfd = -1;
+        struct addrinfo hints = {}, *res = NULL;
+        hints.ai_family = AF_UNSPEC;
+        hints.ai_socktype = SOCK_STREAM;
+
+        if (getaddrinfo(ipaddr, "62078", &hints, &res) != 0 || !res) return udid;
+
+        for (struct addrinfo *rp = res; rp; rp = rp->ai_next) {
+            sfd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+            if (sfd < 0) continue;
+
+            if (rp->ai_family == AF_INET6 && ifindex != 0) {
+                struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)rp->ai_addr;
+                if (IN6_IS_ADDR_LINKLOCAL(&sin6->sin6_addr) && sin6->sin6_scope_id == 0) {
+                    sin6->sin6_scope_id = ifindex;
+                }
+            }
+
+            struct timeval tv = {5, 0};
+            setsockopt(sfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+            setsockopt(sfd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+
+            if (connect(sfd, rp->ai_addr, rp->ai_addrlen) == 0) break;
+            close(sfd);
+            sfd = -1;
+        }
+        freeaddrinfo(res);
+
+        if (sfd < 0) continue;
+
+        // lockdownd requires QueryType as the initial handshake
+        plist_t p_query = plist_new_dict();
+        plist_dict_set_item(p_query, "Label", plist_new_string("usbmuxd2-probe"));
+        plist_dict_set_item(p_query, "Request", plist_new_string("QueryType"));
+        plist_t p_qresp = lockdownd_send_recv(sfd, p_query);
+        plist_free(p_query);
+        if (!p_qresp) { close(sfd); continue; }
+        plist_free(p_qresp);
+
+        // Read HostID from this candidate's pairing record
+        plist_t p_record = NULL;
+        try {
+            p_record = sysconf_get_device_record(candidate.c_str());
+        } catch (...) {
+            close(sfd);
+            continue;
+        }
+        if (!p_record) { close(sfd); continue; }
+
+        plist_t p_hostid = plist_dict_get_item(p_record, "HostID");
+        const char *hostid_str = NULL;
+        uint64_t hostid_len = 0;
+        if (p_hostid) hostid_str = plist_get_string_ptr(p_hostid, &hostid_len);
+
+        // Try StartSession with this pairing record's HostID
+        plist_t p_start = plist_new_dict();
+        plist_dict_set_item(p_start, "Label", plist_new_string("usbmuxd2-probe"));
+        plist_dict_set_item(p_start, "Request", plist_new_string("StartSession"));
+        if (hostid_str) plist_dict_set_item(p_start, "HostID", plist_new_string(hostid_str));
+        plist_dict_set_item(p_start, "SystemBUID", plist_new_string(buid.c_str()));
+
+        plist_t p_sresp = lockdownd_send_recv(sfd, p_start);
+        plist_free(p_start);
+        plist_free(p_record);
+        close(sfd);
+
+        if (p_sresp) {
+            plist_t p_err = plist_dict_get_item(p_sresp, "Error");
+            if (!p_err) {
+                // StartSession succeeded — this is the device
+                udid = candidate;
+                info("StartSession succeeded for UDID %s", candidate.c_str());
+                plist_free(p_sresp);
+                break;
+            }
+            plist_free(p_sresp);
+        }
+    }
+
+    return udid;
 }
 
 void sysconf_fix_permissions(int uid, int gid){
