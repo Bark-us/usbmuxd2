@@ -35,7 +35,7 @@ SockConn::SockConn(std::string ipaddr, uint16_t dPort, Client *cli, uint32_t ifI
 SockConn::~SockConn(){
 	debug("Destroying SockConn (%p) dPort=%u",this,_dPort);
 	auto fdlist = {_cfd,_dfd};
-	_cfd = -1; 
+	_cfd = -1;
 	_dfd = -1;
 
 	for (int fd : fdlist){
@@ -56,7 +56,7 @@ void SockConn::connect(){
 	struct addrinfo *res = NULL, *rp = NULL;
 	char portstr[8];
 
-	cleanup([&]{
+	guard _cleanup_res([&]{
 		if (res) freeaddrinfo(res);
 	});
 
@@ -87,7 +87,7 @@ void SockConn::connect(){
 	}
 
 	retassure(_dfd > 0, "failed to connect to device on port=%d errno=%d(%s)", _dPort, errno, strerror(errno));
-	
+
     _cli->send_result(_cli->hdr->tag, RESULT_OK);
     _cfd = _cli->_fd;
 
@@ -108,7 +108,7 @@ void SockConn::connect(){
 void SockConn::kill() noexcept{
     //sets _killInProcess to true and executes if statement if it was false before
     if (!_killInProcess.exchange(true)) {
-        
+
         std::thread delthread([this](){
 #ifdef DEBUG
             debug("killing SockConn (%p) C=%d D=%d",this,_cfd,_dfd);
@@ -118,7 +118,7 @@ void SockConn::kill() noexcept{
             delete this;
         });
         delthread.detach();
-        
+
     }
 }
 
