@@ -146,7 +146,7 @@ void avahi_resolve_callback(AvahiServiceResolver *r, AvahiIfIndex interface, Ava
                 serviceName += ".";
                 serviceName += type;
                 try{
-                	dev = new WIFIDevice(uuid, addr, serviceName, wifimgr->_mux);
+                	dev = new WIFIDevice(uuid, addr, serviceName, wifimgr->_mux, (uint32_t)interface);
                 } catch (tihmstar::exception &e){
                 	creterror("failed to construct device with error=%d (%s)",e.code(),e.what());
                 }

@@ -21,6 +21,7 @@
 #include <sysconf/sysconf.hpp>
 #include <string.h>
 #include <arpa/inet.h>
+#include <netinet/in.h>
 #include <unistd.h>
 #include <system_error>
 
@@ -537,19 +538,30 @@ plist_t Muxer::getDevicePlist(Device *dev) noexcept{
 
         if (wifidev->_ipaddr.find(":") == std::string::npos){
             //this is an IPv4 addr
-            #warning TODO this is ugly! :(
+            struct sockaddr_in sin4 = {};
+#ifdef __APPLE__
+            sin4.sin_len = sizeof(struct sockaddr_in);
+#endif
+            sin4.sin_family = AF_INET;
+            sin4.sin_addr.s_addr = inet_addr(wifidev->_ipaddr.c_str());
+            // Pad to 0x80 bytes to match expected format
             char buf[0x80] = {};
-            if (IS_BIGENDIAN()) {
-                ((uint32_t*)buf)[0] = 0x10020000;
-            } else {
-                ((uint32_t*)buf)[0] = 0x00000210;
-            }
-            ((uint32_t*)buf)[1] = inet_addr(wifidev->_ipaddr.c_str());
+            memcpy(buf, &sin4, sizeof(sin4));
             plist_dict_set_item(p_props, "NetworkAddress", plist_new_data(buf, sizeof(buf)));
         }else{
-#warning TODO add support for ipv6 NetworkAddress (data)
+            //this is an IPv6 addr
+            struct sockaddr_in6 sin6 = {};
+#ifdef __APPLE__
+            sin6.sin6_len = sizeof(struct sockaddr_in6);
+#endif
+            sin6.sin6_family = AF_INET6;
+            inet_pton(AF_INET6, wifidev->_ipaddr.c_str(), &sin6.sin6_addr);
+            sin6.sin6_scope_id = wifidev->_ifIndex;
+            char buf[0x80] = {};
+            memcpy(buf, &sin6, sizeof(sin6));
+            plist_dict_set_item(p_props, "NetworkAddress", plist_new_data(buf, sizeof(buf)));
         }
-#warning TODO missing fields: InterfaceIndex (integer)
+        plist_dict_set_item(p_props, "InterfaceIndex", plist_new_uint(wifidev->_ifIndex));
 
     }
     plist_dict_set_item(p_props, "SerialNumber", plist_new_string(dev->getSerial()));

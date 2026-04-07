@@ -15,6 +15,7 @@
 #include <sysconf/sysconf.hpp>
 #include <Devices/WIFIDevice.hpp>
 #include <arpa/inet.h>
+#include <netinet/in.h>
 #include <netdb.h>
 #include <sys/select.h>
 
@@ -37,49 +38,80 @@
 
 #pragma mark callbacks
 void resolve_reply(DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t interfaceIndex, DNSServiceErrorType errorCode, const char *fullname, const char *hosttarget, uint16_t port, uint16_t txtLen, const unsigned char *txtRecord, void *context)noexcept{
-    
+
     int err = 0;
     WIFIDeviceManager *wifimgr = (WIFIDeviceManager*)context;
     WIFIDevice *dev = nullptr;
-    struct hostent *he = NULL;
-    std::string ipaddr = hosttarget;
+    struct addrinfo hints = {};
+    struct addrinfo *res = NULL, *rp = NULL;
+    std::string ipaddr;
 
-    
-    debug("Service '%s' at '%s':\n", fullname, hosttarget);
+
+    debug("Service '%s' at '%s' (interface %u):\n", fullname, hosttarget, interfaceIndex);
     std::string serviceName{fullname};
     std::string macAddr{serviceName.substr(0,serviceName.find("@"))};
     std::string uuid;
-    
+
     try{
         uuid = sysconf_udid_for_macaddr(macAddr);
     }catch (tihmstar::exception &e){
         creterror("failed to find uuid for mac=%s with error=%d (%s)",macAddr.c_str(),e.code(),e.what());
     }
-    
+
     if (!wifimgr->_mux->have_wifi_device(macAddr)) {
         // found new device
-        
-        if (inet_addr(ipaddr.c_str()) == 0xffffffff) {
-            cretassure(he = gethostbyname(ipaddr.c_str()), "failed to get hostbyname");
-            struct in_addr **addr_list = (struct in_addr **) he->h_addr_list;
-            
-            for(int i = 0; addr_list[i] != NULL; i++){
-                if(const char *ipv4addr_str=inet_ntoa(*addr_list[i])){
-                    ipaddr = ipv4addr_str;
-                    break;
+
+        hints.ai_family = AF_UNSPEC;
+        hints.ai_socktype = SOCK_STREAM;
+
+        if (getaddrinfo(hosttarget, NULL, &hints, &res) != 0 || !res) {
+            creterror("failed to resolve hosttarget '%s'", hosttarget);
+        }
+
+        // Pick the best address: prefer IPv6 link-local (most reliable for iOS WiFi),
+        // then any IPv6, then IPv4
+        struct addrinfo *best = NULL;
+        for (rp = res; rp != NULL; rp = rp->ai_next) {
+            if (rp->ai_family == AF_INET6) {
+                struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)rp->ai_addr;
+                if (IN6_IS_ADDR_LINKLOCAL(&sin6->sin6_addr)) {
+                    best = rp;
+                    break; // link-local is preferred
                 }
+                if (!best) best = rp;
+            } else if (rp->ai_family == AF_INET && !best) {
+                best = rp;
             }
         }
-        
+
+        if (!best) best = res;
+
+        if (best->ai_family == AF_INET6) {
+            char addrstr[INET6_ADDRSTRLEN];
+            struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)best->ai_addr;
+            inet_ntop(AF_INET6, &sin6->sin6_addr, addrstr, sizeof(addrstr));
+            ipaddr = addrstr;
+        } else {
+            char addrstr[INET_ADDRSTRLEN];
+            struct sockaddr_in *sin4 = (struct sockaddr_in *)best->ai_addr;
+            inet_ntop(AF_INET, &sin4->sin_addr, addrstr, sizeof(addrstr));
+            ipaddr = addrstr;
+        }
+
+        freeaddrinfo(res); res = NULL;
+
+        debug("Resolved '%s' to '%s' (interface %u)\n", hosttarget, ipaddr.c_str(), interfaceIndex);
+
         try{
-            dev = new WIFIDevice(uuid, ipaddr.c_str(), serviceName, wifimgr->_mux);
+            dev = new WIFIDevice(uuid, ipaddr.c_str(), serviceName, wifimgr->_mux, interfaceIndex);
         } catch (tihmstar::exception &e){
             creterror("failed to construct device with error=%d (%s)",e.code(),e.what());
         }
         wifimgr->_mux->add_device(dev); dev = NULL;
     }
-    
+
 error:
+    if (res) freeaddrinfo(res);
     if (err) {
         error("resolve_reply failed with error=%d",err);
     }

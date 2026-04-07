@@ -26,8 +26,8 @@
 #include <system_error>
 
 
-SockConn::SockConn(std::string ipaddr, uint16_t dPort, Client *cli) 
-: _ipaddr(ipaddr), _cli(cli), _dPort(dPort), _killInProcess(false), _didConnect(false), _cfd(-1), _dfd(-1), _pfds(NULL)
+SockConn::SockConn(std::string ipaddr, uint16_t dPort, Client *cli, uint32_t ifIndex)
+: _ipaddr(ipaddr), _cli(cli), _dPort(dPort), _ifIndex(ifIndex), _killInProcess(false), _didConnect(false), _cfd(-1), _dfd(-1), _pfds(NULL)
 {
 
 }
@@ -52,29 +52,41 @@ void SockConn::connect(){
         _didConnect = true; // make sure destructor knows this function was called and returned
     });
 	int err = 0;
-	struct sockaddr_in devaddr = {};
+	struct addrinfo hints = {};
+	struct addrinfo *res = NULL, *rp = NULL;
+	char portstr[8];
 
-	retassure((_dfd = socket(AF_INET, SOCK_STREAM, 0))>0, "failed to create socket");
+	cleanup([&]{
+		if (res) freeaddrinfo(res);
+	});
 
-	devaddr.sin_family = AF_INET;
-    if ((devaddr.sin_addr.s_addr = inet_addr(_ipaddr.c_str())) == (in_addr_t)-1){
-        struct hostent *he = NULL;
-        struct in_addr **addr_list = NULL;
-        assure(he = gethostbyname(_ipaddr.c_str()));
-        
-        addr_list = (struct in_addr **)he->h_addr_list;
-        for (int i=0; addr_list[i] != NULL; i++) {
-            _ipaddr = inet_ntoa(*addr_list[i]);
-            if ((devaddr.sin_addr.s_addr = inet_addr(_ipaddr.c_str())) != (in_addr_t)-1) {
-                break;
-            }
-        }
-        if (devaddr.sin_addr.s_addr == (in_addr_t)-1)
-            reterror("failed to resolve to ip address");
-    }
-	devaddr.sin_port = htons(_dPort);
+	snprintf(portstr, sizeof(portstr), "%u", _dPort);
 
-	retassure(!(err = ::connect(_dfd, (sockaddr*)&devaddr, sizeof(devaddr))), "failed to connect to device on port=%d with err=%d errno=%d(%s)",_dPort,err,errno,strerror(errno));
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = SOCK_STREAM;
+
+	retassure(!(err = getaddrinfo(_ipaddr.c_str(), portstr, &hints, &res)), "failed to resolve '%s': %s", _ipaddr.c_str(), gai_strerror(err));
+
+	for (rp = res; rp != NULL; rp = rp->ai_next) {
+		if ((_dfd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol)) < 0)
+			continue;
+
+		// For IPv6 link-local addresses, set the scope ID (interface index)
+		if (rp->ai_family == AF_INET6 && _ifIndex != 0) {
+			struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)rp->ai_addr;
+			if (IN6_IS_ADDR_LINKLOCAL(&sin6->sin6_addr) && sin6->sin6_scope_id == 0) {
+				sin6->sin6_scope_id = _ifIndex;
+			}
+		}
+
+		if (::connect(_dfd, rp->ai_addr, rp->ai_addrlen) == 0)
+			break;
+
+		close(_dfd);
+		_dfd = -1;
+	}
+
+	retassure(_dfd > 0, "failed to connect to device on port=%d errno=%d(%s)", _dPort, errno, strerror(errno));
 	
     _cli->send_result(_cli->hdr->tag, RESULT_OK);
     _cfd = _cli->_fd;

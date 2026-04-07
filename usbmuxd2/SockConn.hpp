@@ -18,6 +18,7 @@ class SockConn : Manager{
 	std::string _ipaddr;
     Client *_cli; //unmanaged
     uint16_t _dPort;
+    uint32_t _ifIndex;
 	std::atomic_bool _killInProcess;
     std::atomic_bool _didConnect;
     int _cfd; //client socket lifetime managed by this class
@@ -28,7 +29,7 @@ class SockConn : Manager{
     virtual void afterLoop() noexcept override;
 	~SockConn();
 public:
-	SockConn(std::string ipaddr, uint16_t dPort, Client *cli);
+	SockConn(std::string ipaddr, uint16_t dPort, Client *cli, uint32_t ifIndex = 0);
 
 	void connect();
 
